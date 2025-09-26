@@ -11,7 +11,7 @@ import schemas
 import database
 import utils
 from settings import settings
-from routers import permissions, clients, client_permissions
+from routers import permissions, clients, client_permissions, warehouses
 
 app = FastAPI()
 
@@ -85,3 +85,4 @@ from routers import permissions
 app.include_router(permissions.router)
 app.include_router(clients.router)
 app.include_router(client_permissions.router)
+app.include_router(warehouses.router)

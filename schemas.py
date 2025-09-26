@@ -43,17 +43,40 @@ class ClientPermission(ClientPermissionBase):
     class Config:
         from_attributes = True
 
-# --- Схемы для Складов (Warehouse) ---
-class WarehouseBase(BaseModel):
-    mp_warehouse_id: str
-    warehouse_name: Optional[str] = None
+# --- СХЕМЫ для справочника НАШИХ складов ---
+class OurWarehouseBase(BaseModel):
+    name: str
+    address: str
+    sap_name: Optional[str] = None
+    sap_plant_code: Optional[str] = None
 
-class WarehouseCreate(WarehouseBase):
+class OurWarehouseCreate(OurWarehouseBase):
     pass
 
-class Warehouse(WarehouseBase):
+class OurWarehouseUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    sap_name: Optional[str] = None
+    sap_plant_code: Optional[str] = None
+
+class OurWarehouse(OurWarehouseBase):
     id: int
-    enabled_for_client: bool
+    class Config:
+        from_attributes = True
+
+# --- Схемы для Складов КЛИЕНТА (Warehouse) ---
+class ClientWarehouseBase(BaseModel):
+    mp_warehouse_id: str
+    our_warehouse_id: int # ID нашего склада, к которому идет привязка
+
+class ClientWarehouseCreate(ClientWarehouseBase):
+    pass
+
+class ClientWarehouse(ClientWarehouseBase):
+    id: int
+    client_id: int
+    # Вложенная схема, чтобы сразу видеть информацию о нашем складе
+    our_warehouse: OurWarehouse
 
     class Config:
         from_attributes = True
@@ -95,7 +118,7 @@ class Client(ClientBase):
     contract_status: ContractStatus
     ozon_auth: Optional[ClientOzonAuth] = None
     permissions: List[ClientPermission] = []
-    warehouses: List[Warehouse] = []
+    warehouses: List[ClientWarehouse] = []
 
     class Config:
         from_attributes = True

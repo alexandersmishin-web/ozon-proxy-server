@@ -32,7 +32,7 @@ class Client(Base):
 
     ozon_auth = relationship("ClientOzonAuth", back_populates="client", uselist=False, cascade="all, delete-orphan")
     permissions = relationship("ClientPermission", back_populates="client", cascade="all, delete-orphan")
-    warehouses = relationship("Warehouse", back_populates="client", cascade="all, delete-orphan")
+    warehouses = relationship("ClientWarehouse", back_populates="client", cascade="all, delete-orphan")
 
 # Интеграция с Озон для клиента
 class ClientOzonAuth(Base):
@@ -57,6 +57,19 @@ class Permission(Base):
     # связи
     clients = relationship("ClientPermission", back_populates="permission")
 
+# Справочник НАШИХ складов
+class OurWarehouse(Base):
+    __tablename__ = "our_warehouses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    address = Column(String, nullable=False)
+    sap_name = Column(String, nullable=True)
+    sap_plant_code = Column(String, nullable=True)
+
+    # Связь, чтобы видеть, какие склады клиентов на него ссылаются
+    client_warehouses = relationship("ClientWarehouse", back_populates="our_warehouse")
+
 # Связка: какое право выдал какой клиент
 class ClientPermission(Base):
     __tablename__ = "client_permissions"
@@ -69,12 +82,15 @@ class ClientPermission(Base):
     permission = relationship("Permission", back_populates="clients")
 
 # Модель для хранения складов клиента
-class Warehouse(Base):
-    __tablename__ = "warehouses"
+class ClientWarehouse(Base):
+    __tablename__ = "client_warehouses"
     id = Column(Integer, primary_key=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     mp_warehouse_id = Column(String, nullable=False)         # ID склада из Ozon
-    warehouse_name = Column(String, nullable=True)           # Название, понятное пользователю
-    enabled_for_client = Column(Boolean, default=True)
 
+    # Внешний ключ, ссылающийся на наш справочник
+    our_warehouse_id = Column(Integer, ForeignKey("our_warehouses.id"), nullable=False)
+
+    # Связи
     client = relationship("Client", back_populates="warehouses")
+    our_warehouse = relationship("OurWarehouse", back_populates="client_warehouses")

@@ -36,7 +36,7 @@ async def create_client(client: schemas.ClientCreate, db: AsyncSession = Depends
         .options(
             selectinload(models.Client.ozon_auth),
             selectinload(models.Client.permissions),
-            selectinload(models.Client.warehouses)
+            selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
         )
         .filter(models.Client.id == db_client.id)
     )
@@ -52,7 +52,7 @@ async def read_clients(skip: int = 0, limit: int = 100, db: AsyncSession = Depen
         .options(
             selectinload(models.Client.ozon_auth),
             selectinload(models.Client.permissions),
-            selectinload(models.Client.warehouses)
+            selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
         )
         .offset(skip).limit(limit)
     )
@@ -68,7 +68,7 @@ async def read_client(client_id: int, db: AsyncSession = Depends(get_db)):
         .options(
             selectinload(models.Client.ozon_auth),
             selectinload(models.Client.permissions),
-            selectinload(models.Client.warehouses)
+            selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
         )
         .filter(models.Client.id == client_id)
     )
@@ -107,7 +107,7 @@ async def update_client(client_id: int, client_update: schemas.ClientUpdate, db:
         .options(
             selectinload(models.Client.ozon_auth),
             selectinload(models.Client.permissions).selectinload(models.ClientPermission.permission), # <-- Загружаем даже вложенные связи
-            selectinload(models.Client.warehouses)
+            selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
         )
         .filter(models.Client.id == client_id)
     )
