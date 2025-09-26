@@ -5,13 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from jose import JWTError, jwt
 from datetime import timedelta
+from dotenv import load_dotenv
+load_dotenv()
 
 import models
 import schemas
 import database
 import utils
 from settings import settings
-from routers import permissions, clients, client_permissions, warehouses
+from routers import permissions, clients, client_permissions, warehouses, ozon_auth
 
 app = FastAPI()
 
@@ -86,3 +88,4 @@ app.include_router(permissions.router)
 app.include_router(clients.router)
 app.include_router(client_permissions.router)
 app.include_router(warehouses.router)
+app.include_router(ozon_auth.router)

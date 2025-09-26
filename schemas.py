@@ -82,19 +82,19 @@ class ClientWarehouse(ClientWarehouseBase):
         from_attributes = True
 
 # --- Схемы для Ключей Ozon ---
-class ClientOzonAuthBase(BaseModel):
+# Схема для ПРИЕМА данных от пользователя (создание/обновление)
+class ClientOzonAuthCreate(BaseModel):
     ozon_client_id: str
     ozon_api_key: str
 
-class ClientOzonAuthCreate(ClientOzonAuthBase):
-    pass
-
+# Схема для ОТВЕТА от API (не содержит секретных данных)
 class ClientOzonAuth(BaseModel):
-    ozon_client_id: str
+    id: int
+    client_id: int
     updated_at: datetime
 
     class Config:
-        from_attributes = True
+        from_attributes = True # или orm_mode = True
 
 # --- Схемы для Клиента (User) ---
 class ClientBase(BaseModel):

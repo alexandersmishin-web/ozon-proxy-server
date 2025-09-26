@@ -39,8 +39,8 @@ class ClientOzonAuth(Base):
     __tablename__ = "client_ozon_auth"
     id = Column(Integer, primary_key=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, unique=True)
-    encrypted_ozon_client_id = Column(String, nullable=True)
-    encrypted_ozon_api_key = Column(String, nullable=True)
+    encrypted_ozon_client_id = Column(String, nullable=False)
+    encrypted_ozon_api_key = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -94,3 +94,4 @@ class ClientWarehouse(Base):
     # Связи
     client = relationship("Client", back_populates="warehouses")
     our_warehouse = relationship("OurWarehouse", back_populates="client_warehouses")
+
