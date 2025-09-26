@@ -11,6 +11,7 @@ import schemas
 import database
 import utils
 from settings import settings
+from routers import permissions, clients, client_permissions
 
 app = FastAPI()
 
@@ -79,3 +80,8 @@ async def read_users_me(current_user: schemas.Client = Depends(get_current_user)
 def read_root():
     content = {"message": "Прокси-сервер готов к работе с клиентами!"}
     return JSONResponse(content=content, media_type="application/json; charset=utf-8")
+
+from routers import permissions
+app.include_router(permissions.router)
+app.include_router(clients.router)
+app.include_router(client_permissions.router)

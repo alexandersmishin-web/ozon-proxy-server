@@ -1,9 +1,47 @@
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime
-
-# Исправленный импорт без точки
 from models import ContractStatus
+
+# --- Схемы для СПРАВОЧНИКА Разрешений (Permission) ---
+class PermissionBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_required: bool = False
+    is_active: bool = True
+
+class PermissionCreate(PermissionBase):
+    pass
+
+class PermissionRead(PermissionBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+class PermissionUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_required: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+# --- Схемы для Связки Клиент-Разрешение ---
+class ClientPermissionBase(BaseModel):
+    enabled: bool = True
+
+class ClientPermissionCreate(ClientPermissionBase):
+    permission_id: int
+    pass
+
+class ClientPermissionUpdate(BaseModel):
+    enabled: bool
+
+class ClientPermission(ClientPermissionBase):
+    id: int
+    permission: PermissionRead   # вложенная инфа о праве
+
+    class Config:
+        from_attributes = True
 
 # --- Схемы для Складов (Warehouse) ---
 class WarehouseBase(BaseModel):
@@ -16,20 +54,6 @@ class WarehouseCreate(WarehouseBase):
 class Warehouse(WarehouseBase):
     id: int
     enabled_for_client: bool
-
-    class Config:
-        from_attributes = True
-
-# --- Схемы для Разрешений (Permissions) ---
-class ClientPermissionBase(BaseModel):
-    permission_code: str
-    enabled: bool
-
-class ClientPermissionCreate(ClientPermissionBase):
-    pass
-
-class ClientPermission(ClientPermissionBase):
-    id: int
 
     class Config:
         from_attributes = True
@@ -58,6 +82,13 @@ class ClientBase(BaseModel):
 
 class ClientCreate(ClientBase):
     password: str
+
+class ClientUpdate(BaseModel):
+    login: Optional[str] = None
+    email: Optional[EmailStr] = None
+    inn: Optional[str] = None
+    phone: Optional[str] = None
+    password: Optional[str] = None # Для смены пароля
 
 class Client(ClientBase):
     id: int
