@@ -19,17 +19,32 @@ class ContractStatus(enum.Enum):
     pending = "pending"
     active = "active"
 
+# --- МОДЕЛЬ USER ---
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    login = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=True)
+    password_hash = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False) # Флаг для ваших сотрудников (админов)
+    is_temporary_password = Column(Boolean, default=True) # Флаг для смены пароля клиентом
+
+    # Связь "один-к-одному" с клиентом
+    client = relationship("Client", back_populates="user", uselist=False)
+
 # Пользователь (клиент)
 class Client(Base):
     __tablename__ = "clients"
-    id = Column(Integer, primary_key=True, index=True)
-    login = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    id = Column(Integer, primary_key=True)
     inn = Column(String, unique=True, index=True, nullable=False)
-    email = Column(String, unique=True, index=True)
     phone = Column(String, nullable=True)
     contract_status = Column(SQLAlchemyEnum(ContractStatus), default=ContractStatus.none)
 
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
+
+    user = relationship("User", back_populates="client")
     ozon_auth = relationship("ClientOzonAuth", back_populates="client", uselist=False, cascade="all, delete-orphan")
     permissions = relationship("ClientPermission", back_populates="client", cascade="all, delete-orphan")
     warehouses = relationship("ClientWarehouse", back_populates="client", cascade="all, delete-orphan")

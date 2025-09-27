@@ -39,24 +39,12 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
     return encoded_jwt
 
 # --- АСИНХРОННЫЕ Функции для работы с базой данных ---
-async def get_user_by_login(db: Session, login: str):
-    result = await db.execute(
-        select(models.Client)
-        .options(
-            selectinload(models.Client.ozon_auth),
-            selectinload(models.Client.permissions),
-            selectinload(models.Client.warehouses)
-        )
-        .filter(models.Client.login == login)
-    )
-    return result.scalars().first()
-
 async def create_user(db: Session, user: schemas.ClientCreate):
     hashed_password = get_password_hash(user.password)
     db_user = models.Client(

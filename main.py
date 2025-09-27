@@ -12,8 +12,9 @@ import models
 import schemas
 import database
 import utils
+import crud
 from settings import settings
-from routers import permissions, clients, client_permissions, warehouses, ozon_auth
+from routers import permissions, clients, client_permissions, warehouses, ozon_auth, auth
 
 app = FastAPI()
 
@@ -34,7 +35,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         login: str = payload.get("sub")
         if login is None:
             raise credentials_exception
@@ -42,7 +43,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     except JWTError:
         raise credentials_exception
     
-    user = await utils.get_user_by_login(db, login=token_data.login)
+    user = await crud.get_user_by_login(db, login=token_data.login)
     if user is None:
         raise credentials_exception
     return user
@@ -50,13 +51,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
 # --- Эндпоинты ---
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(database.get_db)):
-    user = await utils.get_user_by_login(db, login=form_data.username)
+    user = await crud.get_user_by_login(db, login=form_data.username)
     if not user or not utils.verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = utils.create_access_token(
         data={"sub": user.login}, expires_delta=access_token_expires
     )
@@ -64,7 +65,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.post("/users/", response_model=schemas.Client)
 async def create_user_route(user: schemas.ClientCreate, db: AsyncSession = Depends(database.get_db)):
-    db_user = await utils.get_user_by_login(db, login=user.login)
+    db_user = await crud.get_user_by_login(db, login=user.login)
     if db_user:
         raise HTTPException(status_code=400, detail="Login already registered")
     
@@ -89,3 +90,4 @@ app.include_router(clients.router)
 app.include_router(client_permissions.router)
 app.include_router(warehouses.router)
 app.include_router(ozon_auth.router)
+app.include_router(auth.router)

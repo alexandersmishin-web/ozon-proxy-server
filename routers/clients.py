@@ -8,6 +8,8 @@ from typing import List
 # Абсолютные импорты
 import models
 import schemas
+import crud
+import security
 from database import get_db
 
 router = APIRouter(
@@ -18,6 +20,16 @@ router = APIRouter(
 # CREATE
 @router.post("/", response_model=schemas.Client, status_code=status.HTTP_201_CREATED)
 async def create_client(client: schemas.ClientCreate, db: AsyncSession = Depends(get_db)):
+    """
+    Создает нового клиента и связанного с ним пользователя с временным паролем.
+    """
+    new_client = await crud.create_client(db, client_data=client)
+    if not new_client:
+        raise HTTPException(
+            status_code=400,
+            detail="Пользователь с таким логином уже существует",
+        )
+    return new_client    
     result = await db.execute(select(models.Client).filter(models.Client.inn == client.inn))
     if result.scalars().first():
         raise HTTPException(status_code=400, detail="Клиент с таким ИНН уже существует")
@@ -45,11 +57,20 @@ async def create_client(client: schemas.ClientCreate, db: AsyncSession = Depends
 
 # READ (all)
 @router.get("/", response_model=List[schemas.Client])
-async def read_clients(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
+async def read_clients(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_user)
+    ):
+    """Получает список всех клиентов."""
+    clients = await crud.get_clients(db, skip=skip, limit=limit)
+    return clients    
     # --- 3. ИСПРАВЛЕНИЕ: Добавляем "жадную" загрузку и для списка ---
     result = await db.execute(
         select(models.Client)
         .options(
+            selectinload(models.Client.user),
             selectinload(models.Client.ozon_auth),
             selectinload(models.Client.permissions),
             selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
@@ -66,6 +87,7 @@ async def read_client(client_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(models.Client)
         .options(
+            selectinload(models.Client.user),
             selectinload(models.Client.ozon_auth),
             selectinload(models.Client.permissions),
             selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
