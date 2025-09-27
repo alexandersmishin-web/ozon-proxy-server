@@ -162,5 +162,10 @@ class ClientOzonAuth(BaseModel):
     class Config:
         from_attributes = True
 
+# --- Схема для смены пароля ---
+class PasswordUpdate(BaseModel):
+    old_password: str
+    new_password: str
+
 # Это нужно для Pydantic, чтобы он мог разрешить "отложенные" аннотации типов
 Client.model_rebuild()

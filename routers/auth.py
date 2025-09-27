@@ -48,3 +48,26 @@ async def login_for_access_token(
 async def read_users_me(current_user: models.User = Depends(security.get_current_user)):
     """Получает информацию о текущем аутентифицированном пользователе."""
     return current_user
+
+@router.patch("/users/me/password", status_code=status.HTTP_204_NO_CONTENT)
+async def update_current_user_password(
+    password_data: schemas.PasswordUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """
+    Позволяет аутентифицированному пользователю сменить свой пароль.
+    """
+    # 1. Проверяем, что старый пароль, введенный пользователем, верен
+    if not security.verify_password(password_data.old_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неверный старый пароль",
+        )
+    
+    # 2. Устанавливаем новый пароль и снимаем флаг временного пароля
+    current_user.password_hash = security.get_password_hash(password_data.new_password)
+    current_user.is_temporary_password = False
+    
+    db.add(current_user)
+    await db.commit()
