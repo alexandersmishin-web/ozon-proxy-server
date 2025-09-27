@@ -50,6 +50,15 @@ async def create_client(db: AsyncSession, client_data: schemas.ClientCreate):
     await db.commit()
     await db.refresh(db_client)
 
+# --- Функции для работы с OzonAuth ---
+
+async def get_ozon_auth_by_client_id(db: AsyncSession, client_id: int):
+    """Ищет запись с ключами Ozon по ID клиента."""
+    result = await db.execute(
+        select(models.ClientOzonAuth).filter(models.ClientOzonAuth.client_id == client_id)
+    )
+    return result.scalars().first()
+
     # --- 2. ВОТ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ---
     # После создания мы заново запрашиваем клиента, но уже с "жадной" загрузкой всех связей.
     # Это гарантирует, что все данные будут доступны для Pydantic.

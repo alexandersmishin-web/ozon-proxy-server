@@ -2,8 +2,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Ключ для шифрования данных. ДОЛЖЕН БЫТЬ СГЕНЕРИРОВАН И ХРАНИТЬСЯ В .env ФАЙЛЕ
-    OZON_CRYPT_KEY: str
-
+    ozon_crypt_key: str
+    database_url: str
     # Настройки для JWT токенов
     jwt_secret_key: str
     jwt_algorithm: str

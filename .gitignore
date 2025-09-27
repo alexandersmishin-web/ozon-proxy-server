@@ -15,3 +15,5 @@ __pycache__/
 
 # Служебные файлы IDE (например, для VS Code)
 .vscode/
+
+create_superuser.py

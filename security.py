@@ -6,6 +6,8 @@ from settings import settings # Импортируем наши настройк
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+from cryptography.fernet import Fernet
+from settings import settings
 
 import crud
 from database import get_db
@@ -52,9 +54,25 @@ def get_password_hash(password: str) -> str:
     """Создает хэш из обычного пароля."""
     return pwd_context.hash(password)
 
+# --- ЦЕНТРАЛИЗОВАННОЕ ШИФРОВАНИЕ ДЛЯ КЛЮЧЕЙ OZON ---
+try:
+    # Используем ключ из настроек, которые читаются из .env
+    cipher_suite = Fernet(settings.ozon_crypt_key.encode())
+except Exception as e:
+    # Это вызовет ошибку при запуске, если ключ отсутствует или невалиден, что хорошо.
+    raise RuntimeError(f"Ошибка инициализации шифра Fernet: {e}")
+
+def encrypt_data(data: str) -> str:
+    """Шифрует строку."""
+    return cipher_suite.encrypt(data.encode()).decode()
+
+def decrypt_data(encrypted_data: str) -> str:
+    """Расшифровывает строку."""
+    return cipher_suite.decrypt(encrypted_data.encode()).decode()
+
 # --- КОД ДЛЯ JWT ---
 
-def create_access_token( dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Создает JWT-токен."""
     to_encode = data.copy()
     if expires_delta:

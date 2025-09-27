@@ -1,23 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from datetime import datetime
 import os
 from cryptography.fernet import Fernet
 import httpx
+import security
 
-import models, schemas
+import models
+import schemas
+import security
+import crud
 from database import get_db
 
 router = APIRouter(prefix="/ozon_auth", tags=["auth"])
-
-# Получение ключа из окружения
-try:
-    FERNET_SECRET = os.environ['OZON_CRYPT_KEY']
-    cipher_suite = Fernet(FERNET_SECRET.encode())
-except KeyError:
-    # Это вызовет ошибку при запуске, если ключ не установлен
-    raise RuntimeError("Переменная окружения OZON_CRYPT_KEY не установлена!")
 
 # --- 2. Новая вспомогательная функция для валидации ключей ---
 async def validate_ozon_keys(client_id: str, api_key: str):
@@ -61,71 +58,62 @@ async def validate_ozon_keys(client_id: str, api_key: str):
                 detail="Не удалось связаться с сервером Ozon. Попробуйте позже."
             )
 
-@router.post("/{client_id}", response_model=schemas.ClientOzonAuth)
-async def create_or_update_auth(client_id: int, payload: schemas.ClientOzonAuthCreate, db: AsyncSession = Depends(get_db)):
+@router.post(
+    "/", # Путь изменен с "/{client_id}" на "/"
+    response_model=schemas.ClientOzonAuth,
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать или обновить ключи Ozon для текущего пользователя"
+)
+async def create_or_update_ozon_auth_for_current_user(
+    payload: schemas.ClientOzonAuthCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_user), # <-- 1. "ОХРАННИК" НА МЕСТЕ
+):
     """
-    Создает или обновляет ключи Ozon для клиента.
-    Если ключи уже существуют, они будут заменены новыми.
+    Создает или обновляет ключи Ozon для аутентифицированного пользователя.
     """
-    # --- 3. Интеграция валидации ---
-    await validate_ozon_keys(
-        client_id=payload.ozon_client_id,
-        api_key=payload.ozon_api_key
-    )    
-
-    # Шифруем полученные ключи
-    encrypted_client_id_str = cipher_suite.encrypt(payload.ozon_client_id.encode()).decode()
-    encrypted_api_key_str = cipher_suite.encrypt(payload.ozon_api_key.encode()).decode()
-
-    # --- ИСПРАВЛЕНИЕ: Ищем существующую запись ---
+    # 2. Находим клиента, который связан с ТЕКУЩИМ пользователем
     result = await db.execute(
-        select(models.ClientOzonAuth).filter(models.ClientOzonAuth.client_id == client_id)
+        select(models.Client).filter(models.Client.user_id == current_user.id)
     )
-    db_auth = result.scalars().first()
+    client = result.scalars().first()
 
-    if db_auth is None:
-        # Если записи нет, создаем новую
-        print("Creating new auth record...")
-        db_auth = models.ClientOzonAuth(
-            client_id=client_id,
-            encrypted_ozon_client_id=encrypted_client_id_str,
-            encrypted_ozon_api_key=encrypted_api_key_str
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Связанный клиент для данного пользователя не найден."
         )
-        db.add(db_auth)
-    else:
-        # Если запись есть, обновляем ее
-        print("Updating existing auth record...")
-        db_auth.encrypted_ozon_client_id = encrypted_client_id_str
-        db_auth.encrypted_ozon_api_key = encrypted_api_key_str
-        # Поле updated_at обновится автоматически благодаря onupdate=datetime.utcnow
-    
-    await db.commit()
-    await db.refresh(db_auth)
-    return db_auth
 
-@router.patch("/{auth_id}", response_model=schemas.ClientOzonAuth)
-async def update_auth(auth_id: int, payload: schemas.ClientOzonAuthCreate, db: AsyncSession = Depends(get_db)):
-    """
-    Обновляет существующие ключи Ozon.
-    Перед обновлением выполняет проверку ключей на валидность.
-    """
-    # --- Валидация ---
+    # 2. Валидируем ключи, делая тестовый запрос к Ozon
     await validate_ozon_keys(
-        client_id=payload.ozon_client_id,
-        api_key=payload.ozon_api_key
+        client_id=payload.ozon_client_id, api_key=payload.ozon_api_key
     )
-    # --- Если валидация прошла успешно ---
-    result = await db.execute(select(models.ClientOzonAuth).filter(models.ClientOzonAuth.id == auth_id))
-    db_auth = result.scalars().first()
-    if not db_auth:
-        raise HTTPException(status_code=404, detail="Auth not found")
-    db_auth.encrypted_ozon_client_id = cipher_suite.encrypt(payload.ozon_client_id.encode()).decode()
-    db_auth.encrypted_ozon_api_key = cipher_suite.encrypt(payload.ozon_api_key.encode()).decode()
-    db_auth.updated_at = datetime.utcnow()
-    db.add(db_auth)
+
+    # 3. Шифруем ключи перед сохранением в базу
+    encrypted_client_id_str = security.encrypt_data(payload.ozon_client_id)
+    encrypted_api_key_str = security.encrypt_data(payload.ozon_api_key)
+
+    # 4. Ищем, есть ли уже запись с ключами для этого клиента
+    auth_entry = await crud.get_ozon_auth_by_client_id(db, client_id=client.id)
+
+    if auth_entry:
+        # Если есть, обновляем ее
+        auth_entry.encrypted_ozon_client_id = encrypted_client_id_str
+        auth_entry.encrypted_ozon_api_key = encrypted_api_key_str
+    else:
+        # Если нет, создаем новую
+        auth_entry = models.ClientOzonAuth(
+            client_id=client.id,
+            encrypted_ozon_client_id=encrypted_client_id_str,
+            encrypted_ozon_api_key=encrypted_api_key_str,
+        )
+        db.add(auth_entry)
+
+    # 5. Сохраняем изменения в базе
     await db.commit()
-    await db.refresh(db_auth)
-    return db_auth
+    await db.refresh(auth_entry)
+
+    return auth_entry
 
 @router.get("/{auth_id}", response_model=schemas.ClientOzonAuth)
 async def get_auth(auth_id: int, db: AsyncSession = Depends(get_db)):
