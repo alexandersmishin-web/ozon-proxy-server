@@ -11,10 +11,12 @@ import schemas
 import crud
 import security
 from database import get_db
+from security import get_current_superuser
 
 router = APIRouter(
     prefix="/clients",
     tags=["clients"],
+    dependencies=[Depends(get_current_superuser)]
 )
 
 # CREATE

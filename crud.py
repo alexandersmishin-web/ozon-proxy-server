@@ -3,6 +3,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload 
+from typing import List, Optional
 
 import models
 import schemas
@@ -84,3 +85,52 @@ async def get_clients(db: AsyncSession, skip: int = 0, limit: int = 100):
     )
     return result.scalars().all()
 
+async def assign_permission_to_client(
+    db: AsyncSession, client_id: int, permission_id: int, enabled: bool
+) -> models.ClientPermission:
+    """
+    Назначает право клиенту. Если право уже было назначено,
+    обновляет его статус (enabled/disabled).
+    """
+    # Ищем существующую связь
+    result = await db.execute(
+        select(models.ClientPermission).filter_by(client_id=client_id, permission_id=permission_id)
+    )
+    db_client_permission = result.scalars().first()
+
+    if db_client_permission:
+        # Если нашли - обновляем статус
+        db_client_permission.enabled = enabled
+    else:
+        # Если не нашли - создаем новую связь
+        db_client_permission = models.ClientPermission(
+            client_id=client_id, permission_id=permission_id, enabled=enabled
+        )
+        db.add(db_client_permission)
+    
+    await db.commit()
+    await db.refresh(db_client_permission)
+    return db_client_permission
+
+async def get_client_permissions(db: AsyncSession, client_id: int) -> List[models.ClientPermission]:
+    """Возвращает список всех прав, назначенных конкретному клиенту."""
+    result = await db.execute(
+        select(models.ClientPermission).filter(models.ClientPermission.client_id == client_id)
+    )
+    return result.scalars().all()
+
+async def check_client_permission(db: AsyncSession, client_id: int, permission_name: str) -> bool:
+    """
+    Проверяет, есть ли у клиента конкретное и ВКЛЮЧЕННОЕ право.
+    Это ключевая функция для нашего прокси.
+    """
+    result = await db.execute(
+        select(models.ClientPermission)
+        .join(models.Permission)
+        .filter(
+            models.ClientPermission.client_id == client_id,
+            models.Permission.name == permission_name,
+            models.ClientPermission.enabled == True
+        )
+    )
+    return result.scalars().first() is not None    

@@ -8,10 +8,12 @@ from typing import List
 import models
 import schemas
 from database import get_db
+from security import get_current_superuser
 
 router = APIRouter(
     prefix="/permissions",
-    tags=["permissions"],
+    tags=["Permissions"],
+    dependencies=[Depends(get_current_superuser)]
 )
 
 # CREATE
@@ -28,13 +30,13 @@ router = APIRouter(
 async def create_permission(permission: schemas.PermissionCreate, db: AsyncSession = Depends(get_db)):
     """
     Создает новое право доступа в справочнике.
+    Доступно только суперпользователям.
     """
-    # --- ИСПРАВЛЕНО: Используем execute и select ---
     result = await db.execute(select(models.Permission).filter(models.Permission.name == permission.name))
     db_perm = result.scalars().first()
     
     if db_perm:
-        raise HTTPException(status_code=400, detail="Право с таким именем уже существует")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Право с таким именем уже существует")
 
     new_perm = models.Permission(**permission.dict())
     db.add(new_perm)
@@ -48,7 +50,6 @@ async def read_permissions(skip: int = 0, limit: int = 100, db: AsyncSession = D
     """
     Возвращает список всех прав из справочника.
     """
-    # --- ИСПРАВЛЕНО: Используем execute и select ---
     result = await db.execute(select(models.Permission).offset(skip).limit(limit))
     permissions = result.scalars().all()
     return permissions
@@ -59,7 +60,6 @@ async def read_permission(permission_id: int, db: AsyncSession = Depends(get_db)
     """
     Возвращает одно право по его ID.
     """
-    # --- ИСПРАВЛЕНО: Используем execute и select ---
     result = await db.execute(select(models.Permission).filter(models.Permission.id == permission_id))
     db_perm = result.scalars().first()
     
@@ -98,7 +98,6 @@ async def delete_permission(permission_id: int, db: AsyncSession = Depends(get_d
     """
     Удаляет право из справочника.
     """
-    # --- ИСПРАВЛЕНО: Используем execute и select ---
     result = await db.execute(select(models.Permission).filter(models.Permission.id == permission_id))
     db_perm = result.scalars().first()
 

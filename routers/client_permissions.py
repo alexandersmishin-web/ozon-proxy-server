@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload # <-- 1. ИМПОРТИРУЕМ selectinload
 from typing import List
+from security import get_current_superuser
 
 import models
 import schemas
@@ -11,6 +12,7 @@ from database import get_db
 router = APIRouter(
     prefix="/clients/{client_id}/permissions",
     tags=["Client Permissions"],
+    dependencies=[Depends(get_current_superuser)]
 )
 
 # НАЗНАЧИТЬ ПРАВО КЛИЕНТУ (GRANT)

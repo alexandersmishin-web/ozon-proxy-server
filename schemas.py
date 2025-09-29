@@ -91,7 +91,7 @@ class PermissionCreate(PermissionBase):
 class PermissionRead(PermissionBase):
     id: int
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 class PermissionUpdate(BaseModel):
     name: Optional[str] = None
@@ -113,7 +113,7 @@ class ClientPermission(ClientPermissionBase):
     id: int
     permission: PermissionRead
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 # --- СХЕМЫ для справочника НАШИХ складов ---
 class OurWarehouseBase(BaseModel):

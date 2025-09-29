@@ -12,6 +12,7 @@ from settings import settings
 import crud
 from database import get_db
 import schemas
+import models
 
 # Указываем FastAPI, где искать токен
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -87,3 +88,17 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         algorithm=settings.jwt_algorithm
     )
     return encoded_jwt
+
+async def get_current_superuser(current_user: models.User = Depends(get_current_user)) -> models.User:
+    """
+    Зависимость, которая проверяет, что текущий пользователь
+    является суперпользователем (is_superuser = True).
+
+    Если проверка не пройдена, выбрасывает ошибку 403 Forbidden.
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operation not permitted for this user role",
+        )
+    return current_user
