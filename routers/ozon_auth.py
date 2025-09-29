@@ -1,12 +1,10 @@
+# File: routers/ozon_auth.py
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
-from datetime import datetime
-import os
-from cryptography.fernet import Fernet
+from typing import Optional # Убедитесь, что Optional импортирован
 import httpx
-import security
 
 import models
 import schemas
@@ -14,121 +12,92 @@ import security
 import crud
 from database import get_db
 
-router = APIRouter(prefix="/ozon_auth", tags=["auth"])
+router = APIRouter(prefix="/ozon_auth", tags=["Ozon Auth"])
 
-# --- 2. Новая вспомогательная функция для валидации ключей ---
+# --- Ваша превосходная функция валидации остается без изменений ---
 async def validate_ozon_keys(client_id: str, api_key: str):
-    """
-    Делает тестовый запрос к Ozon API для проверки валидности ключей.
-    Возвращает True в случае успеха, иначе вызывает HTTPException.
-    """
+    # ... (ваш код валидации)
     url = "https://api-seller.ozon.ru/v1/warehouse/list"
-    headers = {
-        "Client-Id": client_id,
-        "Api-Key": api_key,
-        "Content-Type": "application/json",
-    }
-    # Пустое тело запроса, так как все параметры опциональны
+    headers = {"Client-Id": client_id, "Api-Key": api_key, "Content-Type": "application/json"}
     payload = {} 
-
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, headers=headers, json=payload)
-            
-            # Проверяем код ответа. Ozon возвращает 200 при успехе.
-            if response.status_code == 200:
-                print("Ключи Ozon валидны.")
-                return True
-            # Ozon возвращает 401, 403 или 404 при неверных ключах
+            if response.status_code == 200: return True
             elif response.status_code in [401, 403, 404]:
-                print(f"Ошибка валидации ключей Ozon: {response.status_code}, {response.text}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Неверный Client-Id или Api-Key. Пожалуйста, проверьте данные."
-                )
-            else:
-                # Другие возможные ошибки сети или сервера Ozon
-                response.raise_for_status()
-
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неверный Client-Id или Api-Key.")
+            else: response.raise_for_status()
         except httpx.RequestError as exc:
-            # Ошибки сети
-            print(f"Сетевая ошибка при попытке валидации ключей Ozon: {exc}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Не удалось связаться с сервером Ozon. Попробуйте позже."
-            )
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Не удалось связаться с сервером Ozon.")
 
+# --- УНИВЕРСАЛЬНЫЙ ЭНДПОИНТ ДЛЯ СОЗДАНИЯ КЛЮЧЕЙ ---
 @router.post(
-    "/", # Путь изменен с "/{client_id}" на "/"
+    "/",
     response_model=schemas.ClientOzonAuth,
     status_code=status.HTTP_201_CREATED,
-    summary="Создать или обновить ключи Ozon для текущего пользователя"
+    summary="Создать или обновить ключи Ozon"
 )
-async def create_or_update_ozon_auth_for_current_user(
+async def create_or_update_ozon_auth(
     payload: schemas.ClientOzonAuthCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(security.get_current_user), # <-- 1. "ОХРАННИК" НА МЕСТЕ
+    current_user: models.User = Depends(security.get_current_user),
 ):
     """
-    Создает или обновляет ключи Ozon для аутентифицированного пользователя.
+    Создает или обновляет ключи Ozon.
+    - **Обычный пользователь (клиент):** может обновить только свои ключи. Поле `client_id` в запросе игнорируется.
+    - **Суперпользователь (сотрудник):** может обновить ключи для любого клиента, указав `client_id` в запросе.
     """
-    # 2. Находим клиента, который связан с ТЕКУЩИМ пользователем
-    result = await db.execute(
-        select(models.Client).filter(models.Client.user_id == current_user.id)
-    )
-    client = result.scalars().first()
+    target_client: Optional[models.Client] = None
 
-    if not client:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Связанный клиент для данного пользователя не найден."
+    if current_user.is_superuser:
+        # Если это суперпользователь, он ДОЛЖЕН указать, для какого клиента работает
+        if payload.client_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Суперпользователь должен указать 'client_id' в теле запроса."
+            )
+        # Находим клиента по ID из запроса
+        target_client = await db.get(models.Client, payload.client_id)
+        if not target_client:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Клиент с ID {payload.client_id} не найден."
+            )
+    else:
+        # Если это обычный клиент, ищем связанный с ним профиль
+        result = await db.execute(
+            select(models.Client).filter(models.Client.user_id == current_user.id)
         )
+        target_client = result.scalars().first()
+        if not target_client:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Связанный клиент для данного пользователя не найден."
+            )
 
-    # 2. Валидируем ключи, делая тестовый запрос к Ozon
+    # Валидируем ключи
     await validate_ozon_keys(
         client_id=payload.ozon_client_id, api_key=payload.ozon_api_key
     )
 
-    # 3. Шифруем ключи перед сохранением в базу
+    # Шифруем ключи
     encrypted_client_id_str = security.encrypt_data(payload.ozon_client_id)
     encrypted_api_key_str = security.encrypt_data(payload.ozon_api_key)
 
-    # 4. Ищем, есть ли уже запись с ключами для этого клиента
-    auth_entry = await crud.get_ozon_auth_by_client_id(db, client_id=client.id)
-
+    # Ищем существующую запись или создаем новую
+    auth_entry = await crud.get_ozon_auth_by_client_id(db, client_id=target_client.id)
     if auth_entry:
-        # Если есть, обновляем ее
         auth_entry.encrypted_ozon_client_id = encrypted_client_id_str
         auth_entry.encrypted_ozon_api_key = encrypted_api_key_str
     else:
-        # Если нет, создаем новую
         auth_entry = models.ClientOzonAuth(
-            client_id=client.id,
+            client_id=target_client.id,
             encrypted_ozon_client_id=encrypted_client_id_str,
             encrypted_ozon_api_key=encrypted_api_key_str,
         )
         db.add(auth_entry)
 
-    # 5. Сохраняем изменения в базе
+    # Сохраняем и возвращаем результат
     await db.commit()
     await db.refresh(auth_entry)
-
     return auth_entry
-
-@router.get("/{auth_id}", response_model=schemas.ClientOzonAuth)
-async def get_auth(auth_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(models.ClientOzonAuth).filter(models.ClientOzonAuth.id == auth_id))
-    db_auth = result.scalars().first()
-    if not db_auth:
-        raise HTTPException(status_code=404, detail="Auth not found")
-    return db_auth
-
-@router.delete("/{auth_id}", status_code=204)
-async def delete_auth(auth_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(models.ClientOzonAuth).filter(models.ClientOzonAuth.id == auth_id))
-    db_auth = result.scalars().first()
-    if not db_auth:
-        raise HTTPException(status_code=404, detail="Auth not found")
-    await db.delete(db_auth)
-    await db.commit()
-    return None

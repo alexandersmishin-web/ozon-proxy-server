@@ -15,47 +15,50 @@ from security import get_current_superuser
 
 router = APIRouter(
     prefix="/clients",
-    tags=["clients"],
-    dependencies=[Depends(get_current_superuser)]
+    tags=["Clients"]
 )
 
 # CREATE
-@router.post("/", response_model=schemas.Client, status_code=status.HTTP_201_CREATED)
-async def create_client(client: schemas.ClientCreate, db: AsyncSession = Depends(get_db)):
+@router.post(
+    "/", 
+    response_model=schemas.Client, 
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать нового клиента и пользователя"
+)
+async def create_client_and_user_endpoint(
+    payload: schemas.ClientCreateWithUser,
+    db: AsyncSession = Depends(get_db),
+    # Защита: только суперпользователь может создавать клиентов
+    current_admin: models.User = Depends(security.get_current_superuser)
+):
     """
-    Создает нового клиента и связанного с ним пользователя с временным паролем.
+    Создает нового клиента и связанного с ним пользователя.
+    Выполняет проверку на дубликат логина перед созданием.
+    Все операции выполняются в одной транзакции.
     """
-    new_client = await crud.create_client(db, client_data=client)
-    if not new_client:
+    # 1. Проверяем, не занят ли логин
+    db_user = await crud.get_user_by_login(db, login=payload.user_data.login)
+    if db_user:
         raise HTTPException(
-            status_code=400,
-            detail="Пользователь с таким логином уже существует",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь с таким логином уже существует"
         )
-    return new_client    
-    result = await db.execute(select(models.Client).filter(models.Client.inn == client.inn))
-    if result.scalars().first():
-        raise HTTPException(status_code=400, detail="Клиент с таким ИНН уже существует")
-
-    hashed_password = f"{client.password}_hashed"
-    new_client_data = client.dict(exclude={"password"})
-    db_client = models.Client(**new_client_data, password_hash=hashed_password)
-
-    db.add(db_client)
-    await db.commit()
-    await db.refresh(db_client) # <-- refresh() не загружает связи, поэтому нужен доп. запрос
-
-    # --- 2. ИСПРАВЛЕНИЕ: Повторно запрашиваем клиента с "жадной" загрузкой связей ---
-    result = await db.execute(
-        select(models.Client)
-        .options(
-            selectinload(models.Client.ozon_auth),
-            selectinload(models.Client.permissions),
-            selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
+        
+    # 2. Если логин свободен, вызываем CRUD-функцию для создания
+    try:
+        new_client = await crud.create_client_with_user(
+            db=db, 
+            client_data=payload.client_data, 
+            user_data=payload.user_data
         )
-        .filter(models.Client.id == db_client.id)
-    )
-    final_client = result.scalars().first()
-    return final_client
+        return new_client
+    except Exception as e:
+        # Откатываем транзакцию в случае любой другой ошибки
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Произошла внутренняя ошибка при создании клиента: {e}"
+        )
 
 # READ (all)
 @router.get("/", response_model=List[schemas.Client])

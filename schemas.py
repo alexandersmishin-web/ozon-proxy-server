@@ -50,9 +50,18 @@ class ClientBase(BaseModel):
 
 # Схема для создания КЛИЕНТА (включает создание Пользователя)
 class ClientCreate(ClientBase):
-    login: str
-    password: str
-    email: Optional[EmailStr] = None
+    #login: str
+    #password: str
+    #email: Optional[EmailStr] = None
+    pass
+
+class ClientCreateWithUser(BaseModel):
+    """
+    Схема для эндпоинта POST /clients/.
+    Принимает вложенные данные для клиента и для нового пользователя.
+    """
+    client_data: ClientCreate
+    user_data: UserCreate
 
 # Схема для обновления данных КЛИЕНТА
 class ClientUpdate(ClientBase):
@@ -152,6 +161,7 @@ class ClientWarehouse(ClientWarehouseBase):
 
 # --- Схемы для Ключей Ozon ---
 class ClientOzonAuthCreate(BaseModel):
+    client_id: Optional[int] = None
     ozon_client_id: str
     ozon_api_key: str
 

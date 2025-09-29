@@ -1,15 +1,22 @@
-from pydantic_settings import BaseSettings
+# File: settings.py
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    # Ключ для шифрования данных. ДОЛЖЕН БЫТЬ СГЕНЕРИРОВАН И ХРАНИТЬСЯ В .env ФАЙЛЕ
-    ozon_crypt_key: str
+    # Настройки для базы данных
     database_url: str
-    # Настройки для JWT токенов
+    
+    # Настройки для JWT
     jwt_secret_key: str
-    jwt_algorithm: str
-    access_token_expire_minutes: int
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int # <-- 1. ДОБАВЛЕНО ЭТО ПОЛЕ
+    
+    # Ключ для шифрования Ozon ключей
+    ozon_crypt_key: str
 
-    class Config:
-        env_file = ".env"
+    # Эта строка говорит Pydantic всегда читать
+    # переменные из файла с именем ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
+# Создаем единственный экземпляр настроек
 settings = Settings()

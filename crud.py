@@ -51,6 +51,38 @@ async def create_client(db: AsyncSession, client_data: schemas.ClientCreate):
     await db.commit()
     await db.refresh(db_client)
 
+async def create_client_with_user(db: AsyncSession, client_data: schemas.ClientCreate, user_data: schemas.UserCreate) -> models.Client:
+    """
+    Атомарно создает пользователя и связанного с ним клиента.
+    Гарантированно подгружает все связи перед возвратом.
+    """
+    # Локальный импорт для разрыва циклической зависимости
+    from security import get_password_hash 
+    
+    # 1. Создаем объекты в памяти (БЕЗ КОММИТА)
+    hashed_password = get_password_hash(user_data.password)
+    db_user = models.User(
+        login=user_data.login,
+        email=user_data.email,
+        password_hash=hashed_password,
+    )
+    
+    # Связываем пользователя и клиента сразу
+    db_client = models.Client(**client_data.model_dump(), user=db_user)
+    
+    # 2. Добавляем оба объекта в сессию
+    db.add(db_client)
+    
+    # 3. Коммитим все вместе
+    await db.commit()
+    
+    # 4. --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ ---
+    # Обновляем ТОЛЬКО что созданный объект, чтобы SQLAlchemy
+    # подгрузил его связи в рамках ТОЙ ЖЕ активной сессии.
+    await db.refresh(db_client, ['user', 'permissions', 'ozon_auth', 'warehouses'])
+    
+    return db_client
+
 # --- Функции для работы с OzonAuth ---
 
 async def get_ozon_auth_by_client_id(db: AsyncSession, client_id: int):
