@@ -30,27 +30,6 @@ async def create_user(db: AsyncSession, user: schemas.UserCreate):
     return db_user
 
 # --- Функции для работы с Client ---
-async def create_client(db: AsyncSession, client_data: schemas.ClientCreate):
-    """Создает нового пользователя и привязанного к нему клиента."""
-    db_user = await get_user_by_login(db, login=client_data.login)
-    if db_user:
-        return None
-
-    user_create_schema = schemas.UserCreate(
-        login=client_data.login, password=client_data.password, email=client_data.email
-    )
-    new_user = await create_user(db, user=user_create_schema)
-
-    db_client = models.Client(
-        inn=client_data.inn,
-        phone=client_data.phone,
-        contract_status=client_data.contract_status,
-        user_id=new_user.id
-    )
-    db.add(db_client)
-    await db.commit()
-    await db.refresh(db_client)
-
 async def create_client_with_user(db: AsyncSession, client_data: schemas.ClientCreate, user_data: schemas.UserCreate) -> models.Client:
     """
     Атомарно создает пользователя и связанного с ним клиента.
@@ -105,17 +84,35 @@ async def get_ozon_auth_by_client_id(db: AsyncSession, client_id: int):
     )
     return result.scalars().first()
 
-async def get_clients(db: AsyncSession, skip: int = 0, limit: int = 100):
-    """Получает список клиентов с жадной загрузкой."""
+async def get_clients(db: AsyncSession, skip: int = 0, limit: int = 100) -> list[models.Client]:
+    """
+    Получает список клиентов с принудительной загрузкой ВСЕХ связей.
+    """
+    result = await db.execute(
+        select(models.Client).options(
+            selectinload(models.Client.user),
+            selectinload(models.Client.ozon_auth),
+            # Вложенная "жадная" загрузка решает ошибку с MissingGreenlet
+            selectinload(models.Client.permissions).selectinload(models.ClientPermission.permission),
+            selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
+        ).offset(skip).limit(limit)
+    )
+    return result.scalars().all()
+
+async def get_client(db: AsyncSession, client_id: int) -> models.Client | None:
+    """
+    Получает одного клиента по ID с принудительной загрузкой ВСЕХ связей.
+    """
     result = await db.execute(
         select(models.Client).options(
             selectinload(models.Client.user),
             selectinload(models.Client.ozon_auth),
             selectinload(models.Client.permissions).selectinload(models.ClientPermission.permission),
             selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
-        ).offset(skip).limit(limit)
+        ).filter(models.Client.id == client_id)
     )
-    return result.scalars().all()
+    return result.scalars().first()
+
 
 async def assign_permission_to_client(
     db: AsyncSession, client_id: int, permission_id: int, enabled: bool

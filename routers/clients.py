@@ -1,17 +1,12 @@
-# In: routers/clients.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload # <-- 1. ИМПОРТИРУЕМ selectinload
 from typing import List
 
-# Абсолютные импорты
 import models
 import schemas
 import crud
 import security
 from database import get_db
-from security import get_current_superuser
 
 router = APIRouter(
     prefix="/clients",
@@ -19,32 +14,20 @@ router = APIRouter(
 )
 
 # CREATE
-@router.post(
-    "/", 
-    response_model=schemas.Client, 
-    status_code=status.HTTP_201_CREATED,
-    summary="Создать нового клиента и пользователя"
-)
+@router.post("/", response_model=schemas.Client, status_code=status.HTTP_201_CREATED)
 async def create_client_and_user_endpoint(
     payload: schemas.ClientCreateWithUser,
     db: AsyncSession = Depends(get_db),
-    # Защита: только суперпользователь может создавать клиентов
     current_admin: models.User = Depends(security.get_current_superuser)
 ):
-    """
-    Создает нового клиента и связанного с ним пользователя.
-    Выполняет проверку на дубликат логина перед созданием.
-    Все операции выполняются в одной транзакции.
-    """
-    # 1. Проверяем, не занят ли логин
+    """Создает нового клиента и связанного с ним пользователя."""
     db_user = await crud.get_user_by_login(db, login=payload.user_data.login)
     if db_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Пользователь с таким логином уже существует"
         )
-        
-    # 2. Если логин свободен, вызываем CRUD-функцию для создания
+    
     try:
         new_client = await crud.create_client_with_user(
             db=db, 
@@ -53,7 +36,6 @@ async def create_client_and_user_endpoint(
         )
         return new_client
     except Exception as e:
-        # Откатываем транзакцию в случае любой другой ошибки
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -63,43 +45,20 @@ async def create_client_and_user_endpoint(
 # READ (all)
 @router.get("/", response_model=List[schemas.Client])
 async def read_clients(
-    skip: int = 0, 
-    limit: int = 100, 
+    skip: int = 0,
+    limit: int = 100,
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(security.get_current_user)
-    ):
-    """Получает список всех клиентов."""
+):
+    """Получает список всех клиентов, вызывая исправленную CRUD-функцию."""
     clients = await crud.get_clients(db, skip=skip, limit=limit)
-    return clients    
-    # --- 3. ИСПРАВЛЕНИЕ: Добавляем "жадную" загрузку и для списка ---
-    result = await db.execute(
-        select(models.Client)
-        .options(
-            selectinload(models.Client.user),
-            selectinload(models.Client.ozon_auth),
-            selectinload(models.Client.permissions),
-            selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
-        )
-        .offset(skip).limit(limit)
-    )
-    clients = result.scalars().all()
     return clients
 
 # READ (one)
 @router.get("/{client_id}", response_model=schemas.Client)
-async def read_client(client_id: int, db: AsyncSession = Depends(get_db)):
-    # --- 4. ИСПРАВЛЕНИЕ: Добавляем "жадную" загрузку для одного клиента ---
-    result = await db.execute(
-        select(models.Client)
-        .options(
-            selectinload(models.Client.user),
-            selectinload(models.Client.ozon_auth),
-            selectinload(models.Client.permissions),
-            selectinload(models.Client.warehouses).selectinload(models.ClientWarehouse.our_warehouse)
-        )
-        .filter(models.Client.id == client_id)
-    )
-    db_client = result.scalars().first()
+async def read_client(client_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(security.get_current_user)):
+    """Получает одного клиента по ID, вызывая исправленную CRUD-функцию."""
+    db_client = await crud.get_client(db, client_id=client_id)
     if db_client is None:
         raise HTTPException(status_code=404, detail="Клиент не найден")
     return db_client
